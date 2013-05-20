@@ -10,6 +10,7 @@ from django.http import Http404
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.request import clone_request
+from rest_framework.settings import api_settings
 import warnings
 
 
@@ -38,6 +39,86 @@ def _get_validation_exclusions(obj, pk=None, slug_field=None, lookup_field=None)
         include.append(lookup_field)
 
     return [field.name for field in obj._meta.fields if field.name not in include]
+
+
+class SerializerMixin(object):
+    """
+    A mixin that provides a way to handle serilization.
+    """
+
+    # You'll need to either set these attributes,
+    # or override `get_queryset()`/`get_serializer_class()`.
+    serializer_class = None
+
+    # The following attributes may be subject to change,
+    # and should be considered private API.
+    model_serializer_class = api_settings.DEFAULT_MODEL_SERIALIZER_CLASS
+
+    # Pagination settings
+    pagination_serializer_class = api_settings.DEFAULT_PAGINATION_SERIALIZER_CLASS
+
+    def get_serializer_context(self):
+        """
+        Extra context provided to the serializer class.
+        """
+        return {
+            'request': self.request,
+            'format': self.format_kwarg,
+            'view': self
+        }
+
+    def get_serializer(self, instance=None, data=None,
+                       files=None, many=False, partial=False):
+        """
+        Return the serializer instance that should be used for validating and
+        deserializing input, and for serializing output.
+        """
+        serializer_class = self.get_serializer_class()
+        context = self.get_serializer_context()
+        return serializer_class(instance, data=data, files=files,
+                                many=many, partial=partial, context=context)
+
+    def get_pagination_serializer(self, page):
+        """
+        Return a serializer instance to use with paginated data.
+        """
+        class SerializerClass(self.pagination_serializer_class):
+            class Meta:
+                object_serializer_class = self.get_serializer_class()
+
+        pagination_serializer_class = SerializerClass
+        context = self.get_serializer_context()
+        return pagination_serializer_class(instance=page, context=context)
+
+    ########################
+    ### The following methods provide default implementations
+    ### that you may want to override for more complex cases.
+
+    def get_serializer_class(self):
+        """
+        Return the class to use for the serializer.
+        Defaults to using `self.serializer_class`.
+
+        You may want to override this if you need to provide different
+        serializations depending on the incoming request.
+
+        (Eg. admins get full serialization, others get basic serilization)
+        """
+        serializer_class = self.serializer_class
+        if serializer_class is not None:
+            return serializer_class
+
+        assert self.model is not None, \
+            "'%s' should either include a 'serializer_class' attribute, " \
+            "or use the 'model' attribute as a shortcut for " \
+            "automatically generating a serializer class." \
+            % self.__class__.__name__
+
+        class DefaultSerializer(self.model_serializer_class):
+            class Meta:
+                model = self.model
+        return DefaultSerializer
+
 
 
 class CreateModelMixin(object):

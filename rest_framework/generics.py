@@ -14,7 +14,7 @@ from rest_framework.settings import api_settings
 import warnings
 
 
-class GenericAPIView(views.APIView):
+class GenericAPIView(mixins.SerializerMixin, views.APIView):
     """
     Base class for all other generic views.
     """
@@ -22,7 +22,6 @@ class GenericAPIView(views.APIView):
     # You'll need to either set these attributes,
     # or override `get_queryset()`/`get_serializer_class()`.
     queryset = None
-    serializer_class = None
 
     # This shortcut may be used instead of setting either or both
     # of the `queryset`/`serializer_class` attributes, although using
@@ -36,7 +35,6 @@ class GenericAPIView(views.APIView):
     # Pagination settings
     paginate_by = api_settings.PAGINATE_BY
     paginate_by_param = api_settings.PAGINATE_BY_PARAM
-    pagination_serializer_class = api_settings.DEFAULT_PAGINATION_SERIALIZER_CLASS
     page_kwarg = 'page'
 
     # The filter backend classes to use for queryset filtering
@@ -44,7 +42,6 @@ class GenericAPIView(views.APIView):
 
     # The following attributes may be subject to change,
     # and should be considered private API.
-    model_serializer_class = api_settings.DEFAULT_MODEL_SERIALIZER_CLASS
     paginator_class = Paginator
 
     ######################################
@@ -55,39 +52,6 @@ class GenericAPIView(views.APIView):
     slug_field = 'slug'
     allow_empty = True
     filter_backend = api_settings.FILTER_BACKEND
-
-    def get_serializer_context(self):
-        """
-        Extra context provided to the serializer class.
-        """
-        return {
-            'request': self.request,
-            'format': self.format_kwarg,
-            'view': self
-        }
-
-    def get_serializer(self, instance=None, data=None,
-                       files=None, many=False, partial=False):
-        """
-        Return the serializer instance that should be used for validating and
-        deserializing input, and for serializing output.
-        """
-        serializer_class = self.get_serializer_class()
-        context = self.get_serializer_context()
-        return serializer_class(instance, data=data, files=files,
-                                many=many, partial=partial, context=context)
-
-    def get_pagination_serializer(self, page):
-        """
-        Return a serializer instance to use with paginated data.
-        """
-        class SerializerClass(self.pagination_serializer_class):
-            class Meta:
-                object_serializer_class = self.get_serializer_class()
-
-        pagination_serializer_class = SerializerClass
-        context = self.get_serializer_context()
-        return pagination_serializer_class(instance=page, context=context)
 
     def paginate_queryset(self, queryset, page_size=None):
         """
@@ -192,31 +156,6 @@ class GenericAPIView(views.APIView):
                 pass
 
         return self.paginate_by
-
-    def get_serializer_class(self):
-        """
-        Return the class to use for the serializer.
-        Defaults to using `self.serializer_class`.
-
-        You may want to override this if you need to provide different
-        serializations depending on the incoming request.
-
-        (Eg. admins get full serialization, others get basic serilization)
-        """
-        serializer_class = self.serializer_class
-        if serializer_class is not None:
-            return serializer_class
-
-        assert self.model is not None, \
-            "'%s' should either include a 'serializer_class' attribute, " \
-            "or use the 'model' attribute as a shortcut for " \
-            "automatically generating a serializer class." \
-            % self.__class__.__name__
-
-        class DefaultSerializer(self.model_serializer_class):
-            class Meta:
-                model = self.model
-        return DefaultSerializer
 
     def get_queryset(self):
         """
